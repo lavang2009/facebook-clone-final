@@ -1,21 +1,18 @@
 import { useSyncExternalStore } from 'react';
 
-const STORAGE_KEY = 'socialwave_state_v2';
+const STORAGE_KEY = 'socialwave_state_v3';
 const CHANGE_EVENT = 'socialwave-change';
 
-// ===== DEFAULT =====
 const defaultState = {
-  version: 2,
+  version: 3,
   users: {},
   posts: [],
   comments: {},
-  notifications: {},
+  notifications: {}
 };
 
-// ===== SAFE CLONE =====
-const clone = (v) => JSON.parse(JSON.stringify(v || {}));
+const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
 
-// ===== LOAD =====
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -29,7 +26,7 @@ function loadState() {
       users: parsed.users || {},
       posts: Array.isArray(parsed.posts) ? parsed.posts : [],
       comments: parsed.comments || {},
-      notifications: parsed.notifications || {},
+      notifications: parsed.notifications || {}
     };
   } catch (e) {
     console.error('LOAD ERROR:', e);
@@ -39,7 +36,6 @@ function loadState() {
 
 let cache = loadState();
 
-// ===== SAVE =====
 function persist(state) {
   cache = state;
   try {
@@ -50,15 +46,13 @@ function persist(state) {
   }
 }
 
-// ===== MUTATE =====
 function mutate(fn) {
-  const next = clone(cache);
+  const next = clone(cache) || clone(defaultState);
   fn(next);
   persist(next);
   return next;
 }
 
-// ===== SUBSCRIBE =====
 export function useAppState() {
   return useSyncExternalStore(
     (cb) => {
@@ -69,31 +63,32 @@ export function useAppState() {
         window.removeEventListener('storage', cb);
       };
     },
-    () => cache
+    () => cache,
+    () => defaultState
   );
 }
 
-// ================= USER =================
 export function ensureUser(user) {
   if (!user?.uid) return null;
 
-  return mutate((s) => {
+  mutate((s) => {
     if (!s.users[user.uid]) {
       s.users[user.uid] = {
         uid: user.uid,
         displayName: user.displayName || 'Người dùng',
         photoURL: user.photoURL || '',
-        createdAt: Date.now(),
+        createdAt: Date.now()
       };
     }
   });
+
+  return clone(cache.users[user.uid]);
 }
 
 export function getUser(uid) {
   return clone(cache.users?.[uid]);
 }
 
-// ================= POST =================
 export function createPost(data) {
   const post = {
     id: crypto.randomUUID(),
@@ -105,27 +100,26 @@ export function createPost(data) {
     likedBy: [],
     reactions: {},
     likeCount: 0,
-    commentCount: 0,
+    commentCount: 0
   };
 
   mutate((s) => {
     s.posts.unshift(post);
   });
 
-  return post;
+  return clone(post);
 }
 
 export function getPosts() {
   return [...(cache.posts || [])];
 }
 
-// ================= LIKE =================
 export function toggleLike(postId, uid) {
   mutate((s) => {
     const post = s.posts.find(p => p.id === postId);
     if (!post) return;
 
-    if (!post.likedBy) post.likedBy = [];
+    if (!Array.isArray(post.likedBy)) post.likedBy = [];
 
     const i = post.likedBy.indexOf(uid);
     if (i >= 0) post.likedBy.splice(i, 1);
@@ -135,13 +129,14 @@ export function toggleLike(postId, uid) {
   });
 }
 
-// ================= REACTION =================
 export function react(postId, uid, type = 'like') {
   mutate((s) => {
     const post = s.posts.find(p => p.id === postId);
     if (!post) return;
 
     if (!post.reactions) post.reactions = {};
+    if (!Array.isArray(post.likedBy)) post.likedBy = [];
+
     post.reactions[uid] = type;
 
     if (!post.likedBy.includes(uid)) {
@@ -152,17 +147,21 @@ export function react(postId, uid, type = 'like') {
   });
 }
 
-// ================= COMMENT =================
+export function getReaction(post, uid) {
+  return post?.reactions?.[uid] || '';
+}
+
 export function addComment(postId, user, text) {
   if (!user?.uid) throw new Error('Thiếu user');
+  if (!text?.trim()) return;
 
   const comment = {
     id: crypto.randomUUID(),
     uid: user.uid,
     authorName: user.displayName,
     authorPhoto: user.photoURL,
-    text,
-    createdAt: Date.now(),
+    text: text.trim(),
+    createdAt: Date.now()
   };
 
   mutate((s) => {
@@ -175,14 +174,13 @@ export function addComment(postId, user, text) {
     }
   });
 
-  return comment;
+  return clone(comment);
 }
 
 export function getComments(postId) {
   return [...(cache.comments?.[postId] || [])];
 }
 
-// ================= TIME =================
 export function timeAgo(time) {
   if (!time) return 'vừa xong';
 
